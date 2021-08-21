@@ -20,10 +20,12 @@
                 const formData = new FormData()
 
                 formData.append('file', file)
-                await fetch('/create', {
+                const res = await fetch('/create', {
                     method: 'POST',
                     body: formData
                 })
+                const json = await res.json()
+                window.location.replace(json.data)
             } catch (error) {
                 console.log('>>> error uploading', error)
             }
