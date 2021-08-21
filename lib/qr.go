@@ -5,14 +5,14 @@ import (
 )
 
 func GenerateQR(id string, filename string) (string, error) {
+	appConfig := GetConfig()
 	config := qrcode.Config{
 		EncMode: qrcode.EncModeByte,
 		EcLevel: qrcode.ErrorCorrectionQuart,
 	}
 
 	qr, err := qrcode.NewWithConfig(
-		// TODO: use the proper url
-		"http://localhost:3000/content/" + filename,
+		appConfig.APP_URL + "/content/" + filename,
 		&config,
 		qrcode.WithQRWidth(10),
 	)

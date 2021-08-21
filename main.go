@@ -38,6 +38,7 @@ type File struct {
 	UploadDate primitive.DateTime`json:"uploadDate"`
 }
 
+// TODO: rotate and remove
 const (
 	user = "djmibvor"
 	password = "wXXFD7t6lb986c3t1JTkm1X1m4uMgs3x"
@@ -45,11 +46,12 @@ const (
 )
 
 func main() {
+	config := lib.GetConfig()
 	dbConnString := fmt.Sprintf(
 		"mongodb+srv://%s:%s@cluster0.bqqes.mongodb.net/%s?retryWrites=true&w=majority",
-		user,
-		password,
-		dbName,
+		config.DB_USER,
+		config.DB_PASS,
+		config.DB_NAME,
 	)
 	db := lib.NewMongoClient(dbConnString)
 	gridfs := lib.NewGridFsBucket(db)
@@ -170,7 +172,7 @@ func main() {
 			}
 			response.Success = true
 			response.Message = "File uploaded successfully"
-			response.Data = "http://localhost:3000/qr/" + fileId.Hex()
+			response.Data = config.APP_URL + "/qr/" + fileId.Hex()
 
 			data, _ := json.Marshal(response)
 
