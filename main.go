@@ -111,11 +111,67 @@ func main() {
 				http.StatusInternalServerError,
 			)
 		} else {
-			response := HttpResponse{
-				Success: true,
-				Message: "File uploaded successfully",
-				Data: fileId,
+			var response HttpResponse
+			id := fileId.Hex()
+			_id, err := primitive.ObjectIDFromHex(id)
+			database := db.Database("cuerre")
+			files := database.Collection("fs.files")
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+
+			var file File
+			err = files.FindOne(ctx, bson.D{{ Key: "_id", Value: _id }}).Decode(&file)
+
+			if err != nil {
+				log.Println("error finding file", err.Error())
+
+				response.Success = false
+				response.Message = err.Error()
+				data, _ := json.Marshal(response)
+
+				if err == mongo.ErrNoDocuments {
+					w.WriteHeader(http.StatusNotFound)
+				} else {
+					w.WriteHeader(http.StatusInternalServerError)
+				}
+
+				w.Write(data)
+				return
 			}
+
+			var buf bytes.Buffer
+			dsStream, err := gridfs.DownloadToStreamByName(file.Filename, &buf)
+
+			if err != nil {
+				log.Println("error downloading file", err.Error())
+
+				response.Success = false
+				response.Message = err.Error()
+				data, _ := json.Marshal(response)
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write(data)
+			}
+
+			log.Printf("File size to download: %v\n", dsStream)
+
+			dest := "tmp/" + id + "." + file.Metadata.Extension
+			ioutil.WriteFile(dest, buf.Bytes(), 0600)
+
+			_, err = lib.GenerateQR(id, id + "." + file.Metadata.Extension)
+
+			if err != nil {
+				log.Println("error generating QR", err.Error())
+
+				response.Success = false
+				response.Message = err.Error()
+				data, _ := json.Marshal(response)
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write(data)
+			}
+			response.Success = true
+			response.Message = "File uploaded successfully"
+			response.Data = "http://localhost:3000/qr/" + fileId.Hex()
+
 			data, _ := json.Marshal(response)
 
 			w.Header().Set("content-type", "application/json")
@@ -180,13 +236,40 @@ func main() {
 
 		log.Printf("File size to download: %v\n", dsStream)
 
-		ioutil.WriteFile("tmp/" + id + "." + file.Metadata.Extension, buf.Bytes(), 0600)
+		dest := "tmp/" + id + "." + file.Metadata.Extension
+		ioutil.WriteFile(dest, buf.Bytes(), 0600)
+
+		_, err = lib.GenerateQR(id, id + "." + file.Metadata.Extension)
+
+		if err != nil {
+			log.Println("error generating QR", err.Error())
+
+			response.Success = false
+			response.Message = err.Error()
+			data, _ := json.Marshal(response)
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write(data)
+		}
 
 		response.Success = true
 		response.Data = file
 		data, _ := json.Marshal(response)
 		w.Write(data)
 
+	}).Methods("GET")
+
+	r.HandleFunc("/qr/{id}", func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		id := vars["id"]
+
+		http.ServeFile(w, r, "./tmp/" + id + "_qr.png")
+	}).Methods("GET")
+
+	r.HandleFunc("/content/{filename}", func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		filename := vars["filename"]
+
+		http.ServeFile(w, r, "./tmp/" + filename)
 	}).Methods("GET")
 
 	log.Fatal(http.ListenAndServe(":3000", r))
