@@ -8,11 +8,14 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/nicolasacquaviva/cuerre/lib"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
@@ -20,6 +23,19 @@ type HttpResponse struct {
 	Success bool        `json:"success"`
 	Message string      `json:"message,omitempty"`
 	Data    interface{} `json:"data,omitempty"`
+}
+
+type FileMetadata struct {
+	Extension string `json:"extension"`
+}
+
+type File struct {
+	Id primitive.ObjectID `json:"_id"`
+	ChunkSize int `json:"chunkSize"`
+	Filename string `json:"filename"`
+	Length int `json:"length"`
+	Metadata FileMetadata `json:"metadata"`
+	UploadDate primitive.DateTime`json:"uploadDate"`
 }
 
 const (
@@ -41,7 +57,6 @@ func main() {
 	log.Println("Successfully connected to the database")
 
 	fs := http.FileServer(http.Dir("./static"))
-
 	r := mux.NewRouter()
 
 	r.Handle("/", fs)
@@ -76,9 +91,13 @@ func main() {
 			log.Println(err.Error())
 		}
 
-		uploadOpts := options.GridFSUpload()
-			// TODO: what metadata is needed?
-			// .SetMetadata(bson.D{{ "filename", handler.Filename }})
+		filenameParts := strings.Split(handler.Filename, ".")
+		ext := filenameParts[len(filenameParts) - 1]
+
+		uploadOpts := options.GridFSUpload().SetMetadata(bson.D{{
+			Key: "extension",
+			Value: ext,
+		}})
 		fileId, err := gridfs.UploadFromStream(
 			handler.Filename,
 			bytes.NewBuffer(fileBytes),
@@ -109,40 +128,63 @@ func main() {
 		vars := mux.Vars(r)
 		id := vars["id"]
 		response := HttpResponse{}
-
-		filesCol := db.Database("cuerre").Collection("fs.chunks")
-		var results bson.M
-		objectId, err := primitive.ObjectIDFromHex(id)
+		_id, err := primitive.ObjectIDFromHex(id)
 
 		if err != nil {
+			log.Println("error generating object id from hex", err.Error())
 			response.Success = false
 			response.Message = err.Error()
-			w.WriteHeader(http.StatusNotFound)
+			data, _ := json.Marshal(response)
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write(data)
+			return
+		}
+
+		database := db.Database("cuerre")
+		files := database.Collection("fs.files")
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		var file File
+		err = files.FindOne(ctx, bson.D{{ Key: "_id", Value: _id }}).Decode(&file)
+
+		if err != nil {
+			log.Println("error finding file", err.Error())
+
+			response.Success = false
+			response.Message = err.Error()
 			data, _ := json.Marshal(response)
 
-			w.Header().Set("content-type", "application/json")
+			if err == mongo.ErrNoDocuments {
+				w.WriteHeader(http.StatusNotFound)
+			} else {
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+
+			w.Write(data)
+			return
+		}
+
+		var buf bytes.Buffer
+		dsStream, err := gridfs.DownloadToStreamByName(file.Filename, &buf)
+
+		if err != nil {
+			log.Println("error downloading file", err.Error())
+
+			response.Success = false
+			response.Message = err.Error()
+			data, _ := json.Marshal(response)
+			w.WriteHeader(http.StatusInternalServerError)
 			w.Write(data)
 		}
 
-		err = filesCol.FindOne(
-			context.Background(),
-			bson.M{ "files_id": objectId },
-		).Decode(&results)
+		log.Printf("File size to download: %v\n", dsStream)
 
-		if err != nil {
-			response.Success = false
-			response.Message = err.Error()
-			w.WriteHeader(http.StatusNotFound)
-		} else {
-			response.Success = true
-			response.Data = results
+		ioutil.WriteFile("tmp/" + id + "." + file.Metadata.Extension, buf.Bytes(), 0600)
 
-			log.Println(results)
-		}
-
+		response.Success = true
+		response.Data = file
 		data, _ := json.Marshal(response)
-
-		w.Header().Set("content-type", "application/json")
 		w.Write(data)
 
 	}).Methods("GET")
