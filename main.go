@@ -274,5 +274,5 @@ func main() {
 		http.ServeFile(w, r, "./tmp/" + filename)
 	}).Methods("GET")
 
-	log.Fatal(http.ListenAndServe(":3000", r))
+	log.Fatal(http.ListenAndServe(":" + config.PORT, r))
 }
