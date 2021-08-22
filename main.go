@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -38,22 +37,9 @@ type File struct {
 	UploadDate primitive.DateTime`json:"uploadDate"`
 }
 
-// TODO: rotate and remove
-const (
-	user = "djmibvor"
-	password = "wXXFD7t6lb986c3t1JTkm1X1m4uMgs3x"
-	dbName = "cuerre"
-)
-
 func main() {
 	config := lib.GetConfig()
-	dbConnString := fmt.Sprintf(
-		"mongodb+srv://%s:%s@cluster0.bqqes.mongodb.net/%s?retryWrites=true&w=majority",
-		config.DB_USER,
-		config.DB_PASS,
-		config.DB_NAME,
-	)
-	db := lib.NewMongoClient(dbConnString)
+	db := lib.NewMongoClient(config.DB_URL)
 	gridfs := lib.NewGridFsBucket(db)
 
 	log.Println("Successfully connected to the database")
