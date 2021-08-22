@@ -26,7 +26,7 @@
                 const json = await res.json()
                 window.location.replace(json.data)
             } catch (error) {
-                console.log('>>> error uploading', error)
+                console.error('Error uploading file', error)
             }
         }
 
