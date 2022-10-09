@@ -2,12 +2,39 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>cuerre</title>
+    <style>
+        html, body {
+            height: 100%;
+        }
+
+        #app {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+
+        label {
+            font-size: 20px;
+        }
+
+        #file {
+            margin: 16px 0;
+        }
+
+        #submit, #file {
+            font-size: 14px;
+        }
+    </style>
 </head>
 <body>
     <div id="app">
         <form action="POST">
-            <label for="file">File to put behind QR code</label>
+            <label for="file">Select a file to put behind QR code</label>
             <input id="file" name="file" type="file" />
         </form>
         <button id="submit">Submit</button>
@@ -15,6 +42,7 @@
     <script>
         async function upload () {
             document.getElementById('submit').disabled = true
+            document.getElementById('submit').textContent = 'Loading...'
 
             try {
                 const file = document.getElementById('file')?.files[0]
@@ -31,6 +59,7 @@
                 console.error('Error uploading file', error)
             } finally {
                 document.getElementById('submit').disabled = false;
+                document.getElementById('submit').textContent = 'Submit'
             }
         }
 
