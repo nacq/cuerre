@@ -52,10 +52,10 @@ type HttpResponse struct {
 }
 
 var prodConfig = &Configuration{
-	APP_URL: os.Getenv("APP_URL"),
-	DB_URL:  os.Getenv("DB_URL"),
-	MODE:    os.Getenv("MODE"),
-	PORT:    os.Getenv("PORT"),
+	APP_URL: os.Getenv("CUERRE_APP_URL"),
+	DB_URL:  os.Getenv("CUERRE_DB_URL"),
+	MODE:    os.Getenv("CUERRE_MODE"),
+	PORT:    os.Getenv("CUERRE_PORT"),
 }
 
 var defaultConfig = &Configuration{
@@ -93,7 +93,7 @@ func GenerateQR(id string) (string, error) {
 }
 
 func GetConfig() *Configuration {
-	if os.Getenv("MODE") == "production" {
+	if os.Getenv("CUERRE_MODE") == "production" {
 		return prodConfig
 	}
 
