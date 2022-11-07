@@ -25,6 +25,7 @@ type Configuration struct {
 	DB_URL  string
 	MODE    string
 	PORT    string
+	TMP_EXP int
 }
 
 type Datastore struct {
@@ -33,7 +34,9 @@ type Datastore struct {
 }
 
 type FileMetadata struct {
-	Extension string `json:"extension"`
+	Extension string             `json:"extension"`
+	LastRead  primitive.DateTime `json:"lastRead"`
+	Type      string             `json:"type"`
 }
 
 type File struct {
@@ -50,6 +53,9 @@ type HttpResponse struct {
 	Message string      `json:"message,omitempty"`
 	Data    interface{} `json:"data,omitempty"`
 }
+
+// expressed in hours
+const TTL = 2
 
 var prodConfig = &Configuration{
 	APP_URL: os.Getenv("CUERRE_APP_URL"),
@@ -137,11 +143,78 @@ func NewGridFsBucket(client *mongo.Client) *gridfs.Bucket {
 	return bucket
 }
 
+// cleanup files from the tmp directory after a given time
+func cleanupTmpFiles() {
+	ds := NewDatastore()
+	var filenames []string
+	files, _ := ioutil.ReadDir("./tmp")
+
+	for _, file := range files {
+		filenames = append(filenames, file.Name())
+	}
+
+	database := ds.DB.Database("cuerre")
+	filesColl := database.Collection("fs.files")
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+
+	defer cancel()
+
+	cursor, err := filesColl.Find(
+		ctx,
+		bson.D{
+			bson.E{
+				Key: "filename",
+				Value: bson.D{{
+					Key:   "$in",
+					Value: filenames,
+				}},
+			},
+		},
+	)
+
+	if err != nil {
+		log.Printf("Error finding temp files %s\n", err.Error())
+		return
+	}
+
+	defer cursor.Close(ctx)
+
+	for cursor.Next(ctx) {
+		var file File
+
+		err = cursor.Decode(&file)
+
+		if err != nil {
+			log.Printf("Error decoding temp file document %s\n", err.Error())
+
+			return
+		}
+
+		loc, _ := time.LoadLocation("UTC")
+		now := time.Now().In(loc)
+
+		if now.Sub(file.Metadata.LastRead.Time()).Hours() > TTL {
+			log.Println("Removing ./tmp/%s", file.Filename)
+			removeFile("./tmp/" + file.Filename)
+		}
+	}
+}
+
+func removeFile(filePath string) {
+	err := os.Remove(filePath)
+
+	if err != nil {
+		log.Printf("Error removing tmp file %s %s", filePath, err.Error())
+	}
+}
+
 func NewRouter() *mux.Router {
 	r := mux.NewRouter()
 	r.Handle("/", http.FileServer(http.Dir("./static")))
 
 	r.HandleFunc("/create", func(w http.ResponseWriter, r *http.Request) {
+		cleanupTmpFiles()
+
 		ds := NewDatastore()
 		config := GetConfig()
 		// Parse our multipart form, 10 << 20 specifies a maximum
@@ -249,12 +322,7 @@ func NewRouter() *mux.Router {
 
 		log.Printf("QR file stored in gridfs id %s\n", fileId)
 
-		// remove temp qr file
-		err = os.Remove(tmpQRFile)
-
-		if err != nil {
-			log.Printf("Error removing qr tmp file %s %s", tmpQRFile, err.Error())
-		}
+		removeFile(tmpQRFile)
 
 		response := HttpResponse{
 			Success: true,
@@ -271,6 +339,8 @@ func NewRouter() *mux.Router {
 	}).Methods("POST")
 
 	r.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		cleanupTmpFiles()
+
 		response := HttpResponse{
 			Success: true,
 			Message: "Api app and running",
@@ -283,6 +353,8 @@ func NewRouter() *mux.Router {
 	}).Methods("GET")
 
 	r.HandleFunc("/{fileType}/{id}", func(w http.ResponseWriter, r *http.Request) {
+		cleanupTmpFiles()
+
 		ds := NewDatastore()
 		vars := mux.Vars(r)
 		id := vars["id"]
