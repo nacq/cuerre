@@ -38,6 +38,7 @@
             <input id="file" name="file" type="file" />
         </form>
         <button id="submit">Submit</button>
+        <p>The upload process may timeout with big files, have in mind this is just a demo</p>
     </div>
     <script>
         async function upload () {
@@ -49,7 +50,7 @@
                 const formData = new FormData()
 
                 formData.append('file', file)
-                const res = await fetch('/create', {
+                const res = await fetch('/api/create', {
                     method: 'POST',
                     body: formData
                 })
